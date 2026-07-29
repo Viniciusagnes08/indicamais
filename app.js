@@ -640,6 +640,7 @@ function renderAll() {
   updateKpis();
   renderPodium();
   renderRankings();
+  renderReferrals();
   renderWeeklyChart();
   renderFeed();
   renderTerritoryPreview();
@@ -721,6 +722,37 @@ function renderPodium() {
       <span class="number-cell">${item.sales}</span>
       <span class="points-cell">${number.format(item.points)} pts</span>
     </button>`).join('');
+}
+
+function renderReferrals() {
+  const container = el('referralsList');
+  if (!container) return;
+
+  const selected = [...getReferrals()]
+    .sort((a, b) => parseDate(b.date) - parseDate(a.date));
+  const saleIds = new Set(sales.map(sale => sale.id));
+
+  setText('referralsCount', `${selected.length} indicações`);
+
+  if (!selected.length) {
+    container.innerHTML = '<div class="ranking-empty">Nenhuma indicação nesta seleção.</div>';
+    return;
+  }
+
+  container.innerHTML = selected.map(referral => {
+    const employee = getEmployee(referral.employeeId);
+    const isSale = saleIds.has(referral.id);
+
+    return `<div class="referral-row">
+      <span class="participant-cell">
+        <span class="mini-avatar">${escapeHtml(employee?.initials || '?')}</span>
+        <span><strong>${escapeHtml(employee?.name || 'Indicante não identificado')}</strong></span>
+      </span>
+      <span>${escapeHtml(employee?.department || 'Outros')}</span>
+      <span>${escapeHtml(formatDate(referral.date))}</span>
+      <span class="referral-status ${isSale ? 'is-sale' : ''}">${isSale ? 'Venda confirmada' : 'Indicação recebida'}</span>
+    </div>`;
+  }).join('');
 }
 
 function renderRankings() {
