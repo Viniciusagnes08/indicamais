@@ -20,3 +20,39 @@
 @media (max-width:920px){.app-shell{display:block}.sidebar{transform:translateX(-105%);transition:transform .35s var(--ease);width:260px}.sidebar.is-open{transform:none}.main-content{grid-column:auto}.mobile-menu{display:grid;place-items:center}.topbar{height:auto;min-height:80px;padding-block:13px}.topbar-actions{margin-left:auto}.period-control span{display:none}.hero-card{grid-template-columns:1fr;min-height:620px}.hero-copy{padding-bottom:10px}.hero-visual{min-height:280px}.hero-mascot{max-height:300px}.floating-score{top:15px}.dashboard-grid{grid-template-columns:1fr}.kpi-grid{grid-template-columns:repeat(2,1fr)}.kpi-card:last-child{grid-column:1/-1}.ranking-table-panel{overflow-x:auto}.ranking-table-head,.ranking-row{min-width:790px}.map-insights-grid{grid-template-columns:1fr}.team-cards,.admin-grid{grid-template-columns:1fr}.rewards-grid{grid-template-columns:1fr}.reward-card{min-height:190px}.section-intro{align-items:flex-start;flex-direction:column}.ranking-controls{width:100%}.search-box{flex:1}.search-box input{min-width:0;width:100%}}
 @media (max-width:640px){.topbar-title .eyebrow{display:none}.topbar-title h1{font-size:25px}.topbar-actions{gap:7px}.topbar-actions .btn{font-size:0;padding:11px;width:43px;height:43px}.topbar-actions .btn span{font-size:20px}.period-control{padding:4px}.period-control select{max-width:122px}.view{padding-inline:14px}.active-filter-bar{margin-inline:14px}.hero-copy{padding:28px 22px}.hero-copy h2{font-size:62px}.hero-copy>p:not(.kicker){font-size:13px;margin:18px 0}.hero-card{min-height:560px}.hero-visual{min-height:225px}.hero-mascot{width:230px;max-height:240px}.orbit-one{width:230px;height:230px}.orbit-two{width:170px;height:170px}.floating-score{right:10px;top:5px}.goal-card{padding:22px}.goal-number strong{font-size:68px}.goal-mascot{width:140px}.kpi-grid{grid-template-columns:1fr 1fr;gap:9px}.kpi-card{min-height:122px;padding:15px}.kpi-card strong{font-size:29px}.kpi-card:last-child{grid-column:1/-1}.panel{padding:16px}.podium{gap:6px;padding-inline:0}.podium-item{padding-inline:5px}.podium-item.position-1{min-height:200px}.podium-item h4{font-size:11px}.podium-avatar{width:45px;height:45px}.position-1 .podium-avatar{width:58px;height:58px}.compact-row{grid-template-columns:27px minmax(0,1fr) 45px}.compact-row .points-cell{display:none}.bar-chart{height:210px;gap:5px}.chart-summary{grid-template-columns:1fr}.territory-sidebar{grid-template-columns:1fr}.commercial-map{height:420px}.map-toolbar{height:auto;align-items:flex-start;flex-direction:column}.map-legend{display:none}.territory-kpis{grid-template-columns:repeat(2,1fr)}.ranking-controls{flex-direction:column}.ranking-controls select{width:100%}.team-stats{grid-template-columns:repeat(2,1fr)}.reward-rules{flex-direction:column;padding-bottom:0}.reward-rules img{align-self:center;width:130px;order:2}.admin-card{grid-template-columns:45px minmax(0,1fr)}.admin-card>:last-child{grid-column:2}.sale-form{grid-template-columns:1fr}.sale-form .full{grid-column:auto}.modal{padding:20px}.modal-hero img{width:80px;height:95px}.modal-hero h2{font-size:32px}.profile-grid{grid-template-columns:repeat(2,1fr)}}
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.001ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.001ms!important}.ambient,.orbit{display:none}}
+
+
+/* Painel de telão */
+body.presentation-mode .sidebar,
+body.presentation-mode .mobile-menu,
+body.presentation-mode .topbar-actions,
+body.presentation-mode .active-filter-bar {
+  display: none;
+}
+
+body.presentation-mode .app-shell {
+  display: block;
+}
+
+body.presentation-mode .main-content {
+  width: 100%;
+  max-width: none;
+  padding: 28px 40px 44px;
+}
+
+body.presentation-mode .topbar {
+  min-height: auto;
+  padding: 0 0 22px;
+}
+
+body.presentation-mode .topbar-title h1 {
+  font-size: clamp(2.4rem, 5vw, 5rem);
+}
+
+body.presentation-mode .hero-grid {
+  grid-template-columns: minmax(0, 1.7fr) minmax(320px, .8fr);
+}
+
+body.presentation-mode .kpi-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
