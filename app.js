@@ -1317,3 +1317,16 @@ function boot() {
 }
 
 document.addEventListener('DOMContentLoaded', boot);
+
+
+function activatePresentationMode() {
+  if (!new URLSearchParams(window.location.search).has('presentation')) return;
+
+  document.body.classList.add('presentation-mode');
+  document.title = 'Indica+ ST1 | Apresentação';
+
+  const openPresentation = el('openPresentation');
+  if (openPresentation) openPresentation.hidden = true;
+}
+
+document.addEventListener('DOMContentLoaded', activatePresentationMode);
