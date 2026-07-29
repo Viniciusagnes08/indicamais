@@ -25,6 +25,7 @@ const number = new Intl.NumberFormat('pt-BR');
 let employees = [];
 let referrals = [];
 let sales = [];
+let mapPoints = [];
 let lastSnapshot = '';
 let lastSyncAt = null;
 
@@ -41,6 +42,7 @@ const state = {
   period: 'month',
   department: 'all',
   territoryId: 'all',
+  mapStage: 'all',
   search: '',
   metric: 'sales'
 };
@@ -48,6 +50,33 @@ const state = {
 let map = null;
 let markerLayer = null;
 const markerByTerritory = new Map();
+
+const MAP_STAGE_META = {
+  lead: { label: 'Indicação', color: '#63a9ff' },
+  qualification: { label: 'Qualificação', color: '#8b7dff' },
+  opportunity: { label: 'Negociação', color: '#ffbd3d' },
+  installation: { label: 'Instalação', color: '#36df9a' },
+  sale: { label: 'Venda', color: '#ff7600' },
+  lost: { label: 'Perdido', color: '#718096' }
+};
+
+const COMMERCIAL_MAP_BOUNDS = {
+  south: -3.10,
+  north: -2.20,
+  west: -44.65,
+  east: -43.80
+};
+
+function isWithinCommercialMap(latitude, longitude) {
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  return Number.isFinite(lat)
+    && Number.isFinite(lng)
+    && lat >= COMMERCIAL_MAP_BOUNDS.south
+    && lat <= COMMERCIAL_MAP_BOUNDS.north
+    && lng >= COMMERCIAL_MAP_BOUNDS.west
+    && lng <= COMMERCIAL_MAP_BOUNDS.east;
+}
 
 function el(id) {
   return document.getElementById(id);
@@ -74,6 +103,11 @@ function normalize(value) {
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
     .toLowerCase();
+}
+
+function readableLocationName(value) {
+  const text = String(value ?? '').trim();
+  return /^\d+$/.test(text) ? '' : text;
 }
 
 function slug(value) {
@@ -224,15 +258,89 @@ function normalizeApiRow(source, index) {
     codigoRef: pick(source, ['codigoRef', 'Código REF', 'Codigo REF']),
     indicante: String(indicante).trim(),
     equipe: String(pick(source, ['equipe', 'Equipe do indicante', 'Equipe', 'Setor', 'Departamento']) || 'Outros').trim(),
-    municipio: String(pick(source, ['municipio', 'Município', 'Municipio', 'Cidade']) || '').trim(),
-    bairro: String(pick(source, ['bairro', 'Bairro / localidade', 'Bairro', 'Localidade']) || '').trim(),
+    municipio: readableLocationName(
+      pick(source, ['municipio', 'Município', 'Municipio', 'Cidade'])
+    ),
+    bairro: readableLocationName(
+      pick(source, ['bairro', 'Bairro / localidade', 'Bairro', 'Localidade'])
+    ),
     plano: String(pick(source, ['plano', 'Plano', 'Plano contratado', 'Produto']) || '').trim(),
     mrr: parseNumber(pick(source, ['mrr', 'MRR', 'Valor', 'Mensalidade', 'Valor da venda'])),
     vendaValida,
+    etapa: String(stage || (vendaValida ? 'Venda' : 'Indicação')).trim(),
+    geocodeStatus: String(pick(source, [
+      'geocodeStatus',
+      'Status geocodificação',
+      'Status geocodificacao',
+      'Geocoding status',
+      'Geocode status'
+    ]) || '').trim(),
     dataVenda: pick(source, ['dataVenda', 'Data da venda', 'Atualizado no Kommo em', 'Última atualização', 'Ultima atualização']),
     dataIndicacao: pick(source, ['dataIndicacao', 'Form enviado em', 'Criado no Kommo em', 'Data da indicação', 'Data da indicacao']),
     latitude: parseNumber(pick(source, ['latitude', 'Latitude', 'Lat'])),
     longitude: parseNumber(pick(source, ['longitude', 'Longitude', 'Lng', 'Lon']))
+  };
+}
+
+function mapStageFromRow(row) {
+  if (row.vendaValida) return 'sale';
+
+  const stage = normalize(row.etapa);
+  if (stage.includes('perdid') || stage.includes('lost')) return 'lost';
+  if (
+    stage.includes('instal')
+    || stage.includes('execu')
+    || stage.includes('ativ')
+  ) return 'installation';
+  if (
+    stage.includes('oportun')
+    || stage.includes('negocia')
+    || stage.includes('proposta')
+    || stage.includes('orcamento')
+    || stage.includes('orçamento')
+  ) return 'opportunity';
+  if (
+    stage.includes('mql')
+    || stage.includes('sql')
+    || stage.includes('qualifica')
+    || stage.includes('levantamento')
+    || stage.includes('projeto')
+  ) return 'qualification';
+  return 'lead';
+}
+
+function hasMapCoordinates(row) {
+  return Number.isFinite(row.latitude)
+    && Number.isFinite(row.longitude)
+    && Math.abs(row.latitude) <= 90
+    && Math.abs(row.longitude) <= 180
+    && row.latitude !== 0
+    && row.longitude !== 0
+    && isWithinCommercialMap(row.latitude, row.longitude);
+}
+
+function privacySafeCoordinate(value) {
+  return Math.round(Number(value) * 1000) / 1000;
+}
+
+function buildMapPoint(row, recordId, employeeId, territoryId) {
+  if (!hasMapCoordinates(row)) return null;
+
+  const stage = mapStageFromRow(row);
+  return {
+    id: recordId,
+    employeeId,
+    territoryId,
+    lat: privacySafeCoordinate(row.latitude),
+    lng: privacySafeCoordinate(row.longitude),
+    stage,
+    stageLabel: MAP_STAGE_META[stage]?.label || 'Indicação',
+    municipality: row.municipio || '',
+    neighborhood: row.bairro || '',
+    date: toIsoDate(row.dataVenda || row.dataIndicacao),
+    mrr: row.vendaValida ? row.mrr : 0,
+    sale: row.vendaValida,
+    geocodeStatus: row.geocodeStatus || 'Geocodificado'
   };
 }
 
@@ -289,6 +397,7 @@ function applyLiveRows(rawRows) {
   const employeeMap = new Map();
   const nextReferrals = [];
   const nextSales = [];
+  const nextMapPoints = [];
 
   rows.forEach((row, index) => {
     const employeeId = slug(row.indicanteId || row.codigoRef || row.indicante);
@@ -304,6 +413,9 @@ function applyLiveRows(rawRows) {
         initials: initials(row.indicante)
       });
     }
+
+    const mapPoint = buildMapPoint(row, recordId, employeeId, territoryId);
+    if (mapPoint) nextMapPoints.push(mapPoint);
 
     nextReferrals.push({
       id: recordId,
@@ -330,6 +442,7 @@ function applyLiveRows(rawRows) {
   employees = [...employeeMap.values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   referrals = nextReferrals;
   sales = nextSales;
+  mapPoints = nextMapPoints;
 
   state.department = 'all';
   state.territoryId = 'all';
@@ -639,6 +752,7 @@ function renderAll() {
   updateGoal();
   updateKpis();
   renderPodium();
+  renderPresentation();
   renderRankings();
   renderReferrals();
   renderWeeklyChart();
@@ -837,6 +951,90 @@ function renderFeed() {
   }).join('');
 }
 
+function presentationSummaries() {
+  return employeeSummaries().sort((a, b) =>
+    b.sales - a.sales
+    || b.mrr - a.mrr
+    || b.referrals - a.referrals
+    || b.latest - a.latest
+    || a.name.localeCompare(b.name, 'pt-BR')
+  );
+}
+
+function renderPresentation() {
+  const podium = el('presentationPodium');
+  const ranking = el('presentationRanking');
+  const feed = el('presentationFeed');
+  if (!podium || !ranking || !feed) return;
+
+  const summaries = presentationSummaries();
+  const metrics = overallMetrics({ ignoreEntityFilters: true });
+
+  setText('presentationReferrals', number.format(metrics.referrals));
+  setText('presentationSales', number.format(metrics.sales));
+  setText('presentationMrr', money.format(metrics.mrr));
+
+  if (!summaries.length) {
+    podium.innerHTML = '<div class="ranking-empty" style="grid-column:1/-1">Aguardando indicações.</div>';
+    ranking.innerHTML = '<div class="ranking-empty">O ranking aparecerá após a sincronização.</div>';
+  } else {
+    podium.innerHTML = summaries
+      .slice(0, 3)
+      .map((item, index) => podiumItem(item, index + 1))
+      .join('');
+
+    ranking.innerHTML = summaries.slice(3, 10).map((item, index) => `
+      <button class="presentation-rank-row" data-profile="${escapeHtml(item.id)}">
+        <span class="presentation-rank-position">${index + 4}º</span>
+        <span class="presentation-rank-avatar">${escapeHtml(item.initials)}</span>
+        <span class="presentation-rank-copy">
+          <strong>${escapeHtml(item.name)}</strong>
+          <small>${item.referrals} indicaç${item.referrals === 1 ? 'ão' : 'ões'}</small>
+        </span>
+        <span class="presentation-rank-score"><strong>${item.sales}</strong><small>vendas</small></span>
+      </button>`).join('');
+  }
+
+  const latestSales = [...sales]
+    .filter(item => item.status === 'confirmed')
+    .sort((a, b) => parseDate(b.date) - parseDate(a.date))
+    .slice(0, 5);
+
+  if (!latestSales.length) {
+    feed.innerHTML = '<div class="ranking-empty">Aguardando a próxima venda confirmada.</div>';
+    return;
+  }
+
+  feed.innerHTML = latestSales.map((sale, index) => {
+    const employee = getEmployee(sale.employeeId);
+    const territory = getTerritory(sale.territoryId);
+    return `<div class="presentation-sale-row" style="animation-delay:${index * 70}ms">
+      <span class="presentation-sale-check">✓</span>
+      <span>
+        <strong>${escapeHtml(employee?.name || 'Indicante')}</strong>
+        <small>${escapeHtml(territory?.name || 'Sem município')} · ${formatDate(sale.date)}</small>
+      </span>
+      <b>${money.format(sale.mrr)}</b>
+    </div>`;
+  }).join('');
+}
+
+function updatePresentationTimer() {
+  const output = el('presentationTimer');
+  if (!output) return;
+
+  const now = new Date();
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const remaining = Math.max(0, nextMonth.getTime() - now.getTime());
+  const days = Math.floor(remaining / 86400000);
+  const hours = Math.floor((remaining % 86400000) / 3600000);
+  const minutes = Math.floor((remaining % 3600000) / 60000);
+  const seconds = Math.floor((remaining % 60000) / 1000);
+  const pad = value => String(value).padStart(2, '0');
+
+  output.textContent = `${pad(days)}d ${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`;
+}
+
 function territoryMetrics(territoryId) {
   const original = state.territoryId;
   state.territoryId = territoryId;
@@ -886,14 +1084,28 @@ function renderTerritories() {
   const visibleList = list.filter(item => item.metrics.referrals > 0 || item.metrics.sales > 0);
   const overall = overallMetrics();
   const selected = state.territoryId === 'all' ? null : getTerritory(state.territoryId);
+  const pendingLocations = Math.max(0, referrals.length - mapPoints.length);
+  const activeStage = state.mapStage === 'all' ? null : MAP_STAGE_META[state.mapStage];
 
   setText('selectedTerritoryName', selected ? selected.name : 'Todos os territórios');
   setText('territorySales', overall.sales);
   setText('territoryMrr', money.format(overall.mrr));
   setText('territoryConversion', percent(overall.conversion));
   setText('territoryTicket', money.format(overall.ticket));
-  setText('mapSelectionTitle', selected ? selected.name : 'Visão consolidada');
-  setText('mapSelectionSubtitle', selected ? 'Filtro territorial aplicado' : 'INDICA+ CENTRAL');
+  setText('mapMappedCount', mapPoints.length);
+  setText('mapPendingCount', pendingLocations);
+  setText('mapEmptyPendingCount', pendingLocations);
+  setText('mapSelectionTitle', activeStage ? activeStage.label : (selected ? selected.name : 'Grande São Luís'));
+  setText('mapSelectionSubtitle', activeStage
+    ? `Filtro por etapa · ${mapPoints.filter(point => point.stage === state.mapStage).length} pontos`
+    : 'INDICA+ CENTRAL · atualização automática');
+
+  const emptyState = el('mapEmptyState');
+  if (emptyState) emptyState.hidden = mapPoints.length > 0;
+
+  document.querySelectorAll('[data-map-stage]').forEach(button => {
+    button.classList.toggle('is-active', button.dataset.mapStage === state.mapStage);
+  });
 
   const territoryList = el('territoryList');
   if (territoryList) {
@@ -983,27 +1195,90 @@ function initMap() {
   const mapElement = el('commercialMap');
   if (!mapElement) return;
 
+  if (fallback) {
+    fallback.hidden = true;
+    fallback.style.display = 'none';
+  }
+
   if (!window.L) {
-    if (fallback) fallback.hidden = false;
+    if (fallback) {
+      fallback.hidden = false;
+      fallback.style.display = 'grid';
+    }
     mapElement.hidden = true;
+    console.error('[INDICA+ MAP] Leaflet local não foi carregado.');
     return;
   }
 
   map = L.map('commercialMap', {
     zoomControl: true,
     scrollWheelZoom: false,
-    minZoom: 7,
-    maxZoom: 15
-  }).setView([-2.55, -44.20], 10);
+    minZoom: 8,
+    maxZoom: 18,
+    maxBounds: [
+      [COMMERCIAL_MAP_BOUNDS.south, COMMERCIAL_MAP_BOUNDS.west],
+      [COMMERCIAL_MAP_BOUNDS.north, COMMERCIAL_MAP_BOUNDS.east]
+    ],
+    maxBoundsViscosity: 0.85,
+    preferCanvas: true
+  }).setView([-2.55, -44.20], 12);
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-  }).addTo(map);
+  });
 
-  markerLayer = L.layerGroup().addTo(map);
+  tileLayer.on('tileerror', event => {
+    console.warn('[INDICA+ MAP] Falha ao carregar bloco do OpenStreetMap.', {
+      tile: event?.coords || null
+    });
+  });
+
+  tileLayer.addTo(map);
+
+  markerLayer = typeof L.markerClusterGroup === 'function'
+    ? L.markerClusterGroup({
+      showCoverageOnHover: false,
+      spiderfyOnMaxZoom: true,
+      removeOutsideVisibleBounds: true,
+      maxClusterRadius: 48,
+      disableClusteringAtZoom: 16,
+      iconCreateFunction(cluster) {
+        const markers = cluster.getAllChildMarkers();
+        const stages = markers.reduce((counts, marker) => {
+          const stage = marker.options.mapStage || 'lead';
+          counts[stage] = (counts[stage] || 0) + 1;
+          return counts;
+        }, {});
+        const dominantStage = Object.keys(stages)
+          .sort((a, b) => stages[b] - stages[a])[0] || 'lead';
+        const color = MAP_STAGE_META[dominantStage]?.color || MAP_STAGE_META.lead.color;
+        const count = cluster.getChildCount();
+        const size = count >= 50 ? 54 : count >= 10 ? 48 : 42;
+
+        return L.divIcon({
+          className: 'lead-cluster',
+          html: `<span class="lead-cluster-inner" style="--stage-color:${color};--cluster-size:${size}px">${count}</span>`,
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2]
+        });
+      }
+    })
+    : L.layerGroup();
+
+  markerLayer.addTo(map);
+  mapElement.hidden = false;
+  if (fallback) {
+    fallback.hidden = true;
+    fallback.style.display = 'none';
+  }
   updateMapMarkers();
   setTimeout(() => map.invalidateSize(), 100);
+
+  console.info('[INDICA+ MAP] Mapa inicializado.', {
+    leaflet: L.version,
+    clustering: typeof L.markerClusterGroup === 'function'
+  });
 }
 
 function updateMapMarkers() {
@@ -1013,43 +1288,69 @@ function updateMapMarkers() {
   markerByTerritory.clear();
   const bounds = [];
 
-  territories.forEach(territory => {
-    const metrics = territoryMetrics(territory.id);
-    if (!metrics.referrals && !metrics.sales) return;
-
-    const size = 34 + Math.min(30, metrics.sales * 8);
-    const selected = state.territoryId === territory.id;
-    const icon = L.divIcon({
-      className: `territory-marker ${selected ? 'is-selected' : ''}`,
-      html: `<span class="territory-marker-inner" style="--marker-size:${size}px">${metrics.sales}</span>`,
-      iconSize: [size, size],
-      iconAnchor: [size / 2, size / 2]
-    });
-
-    const marker = L.marker([territory.lat, territory.lng], {
-      icon,
-      keyboard: true,
-      title: territory.name
-    }).addTo(markerLayer);
-
-    marker.bindPopup(`<div class="map-popup">
-      <strong>${escapeHtml(territory.name)}</strong>
-      <span>${metrics.sales} vendas · ${money.format(metrics.mrr)} MRR</span>
-      <span>Conversão: ${percent(metrics.conversion)}</span>
-      ${territory.approximate ? '<small>Localização municipal aproximada</small>' : ''}
-    </div>`);
-
-    marker.on('click', () => selectTerritory(territory.id, { keepView: true, openPopup: true }));
-    markerByTerritory.set(territory.id, marker);
-    bounds.push([territory.lat, territory.lng]);
+  const visiblePoints = mapPoints.filter(point => {
+    if (state.mapStage !== 'all' && point.stage !== state.mapStage) return false;
+    if (state.territoryId !== 'all' && point.territoryId !== state.territoryId) return false;
+    if (state.department !== 'all' && getEmployee(point.employeeId)?.department !== state.department) return false;
+    return true;
   });
 
-  if (state.territoryId !== 'all') {
-    const territory = getTerritory(state.territoryId);
-    if (territory) map.flyTo([territory.lat, territory.lng], 12, { duration: 0.7 });
-  } else if (bounds.length) {
-    map.fitBounds(bounds, { padding: [38, 38], maxZoom: 10 });
+  visiblePoints.forEach(point => {
+    const stageMeta = MAP_STAGE_META[point.stage] || MAP_STAGE_META.lead;
+    const employee = getEmployee(point.employeeId);
+    const locationLabel = [point.neighborhood, point.municipality]
+      .filter(Boolean)
+      .join(' · ') || 'Localização geocodificada';
+    const icon = L.divIcon({
+      className: 'lead-marker',
+      html: `<span class="lead-marker-pin" style="--stage-color:${stageMeta.color}"><i></i></span>`,
+      iconSize: [38, 48],
+      iconAnchor: [19, 45],
+      popupAnchor: [0, -40]
+    });
+
+    const marker = L.marker([point.lat, point.lng], {
+      icon,
+      keyboard: true,
+      title: `${stageMeta.label} · ${locationLabel}`,
+      mapStage: point.stage
+    }).addTo(markerLayer);
+
+    marker.bindTooltip(escapeHtml(locationLabel), {
+      className: 'map-location-tooltip',
+      direction: 'top',
+      offset: [0, -34],
+      opacity: 0.96
+    });
+
+    marker.bindPopup(`<div class="map-popup map-lead-popup">
+      <span class="map-popup-stage" style="--stage-color:${stageMeta.color}">${escapeHtml(stageMeta.label)}</span>
+      <strong>${escapeHtml(employee?.name || 'Indicação ST1')}</strong>
+      <span>${escapeHtml(locationLabel)}</span>
+      <span>${formatDate(point.date)}${point.sale ? ` · ${money.format(point.mrr)} de MRR` : ''}</span>
+      <small>Posição aproximada para inteligência territorial.</small>
+    </div>`);
+
+    const territoryMarkers = markerByTerritory.get(point.territoryId) || [];
+    territoryMarkers.push(marker);
+    markerByTerritory.set(point.territoryId, territoryMarkers);
+    bounds.push([point.lat, point.lng]);
+  });
+
+  if (!bounds.length) {
+    map.setView([-2.55, -44.20], 12, { animate: false });
+  } else if (bounds.length === 1) {
+    map.setView(bounds[0], 14, { animate: false });
+  } else {
+    map.fitBounds(bounds, { padding: [54, 54], maxZoom: 13 });
   }
+
+  console.info('[INDICA+ MAP] Pontos renderizados.', {
+    mapped: mapPoints.length,
+    visible: visiblePoints.length,
+    pending: Math.max(0, referrals.length - mapPoints.length),
+    stage: state.mapStage
+  });
 }
 
 function selectTerritory(id, options = {}) {
@@ -1057,7 +1358,17 @@ function selectTerritory(id, options = {}) {
   renderAll();
 
   if (id !== 'all' && options.openPopup) {
-    setTimeout(() => markerByTerritory.get(id)?.openPopup(), 350);
+    setTimeout(() => {
+      const markers = markerByTerritory.get(id) || [];
+      if (markers.length) {
+        const marker = markers[0];
+        if (typeof markerLayer.zoomToShowLayer === 'function') {
+          markerLayer.zoomToShowLayer(marker, () => marker.openPopup());
+        } else {
+          marker.openPopup();
+        }
+      }
+    }, 350);
   }
 
   if (!options.keepView) navigate('territory');
@@ -1261,6 +1572,12 @@ function bindEvents() {
       renderAll();
     }
 
+    const mapStage = event.target.closest('[data-map-stage]');
+    if (mapStage) {
+      state.mapStage = mapStage.dataset.mapStage;
+      renderAll();
+    }
+
     const close = event.target.closest('[data-close]');
     if (close) closeModal(close.dataset.close);
   });
@@ -1297,13 +1614,17 @@ function bindEvents() {
   el('clearFilters')?.addEventListener('click', () => {
     state.department = 'all';
     state.territoryId = 'all';
+    state.mapStage = 'all';
     state.search = '';
     if (el('departmentSelect')) el('departmentSelect').value = 'all';
     if (el('rankingSearch')) el('rankingSearch').value = '';
     renderAll();
   });
 
-  el('resetMap')?.addEventListener('click', () => selectTerritory('all', { keepView: true }));
+  el('resetMap')?.addEventListener('click', () => {
+    state.mapStage = 'all';
+    selectTerritory('all', { keepView: true });
+  });
   el('exportCsv')?.addEventListener('click', exportCsv);
 
   el('openSaleModal')?.addEventListener('click', event => {
@@ -1334,6 +1655,12 @@ function boot() {
   renderAll();
   initMap();
 
+  const requestedView = new URLSearchParams(window.location.search).get('view');
+  const allowedViews = ['dashboard', 'ranking', 'territory', 'referrals', 'presentation', 'teams', 'rewards', 'admin'];
+  if (requestedView && allowedViews.includes(requestedView)) {
+    navigate(requestedView);
+  }
+
   const saleButton = el('openSaleModal');
   if (saleButton) {
     saleButton.disabled = true;
@@ -1342,9 +1669,33 @@ function boot() {
 
   loadLiveData({ silent: true });
   window.setInterval(() => loadLiveData(), REFRESH_INTERVAL_MS);
+  updatePresentationTimer();
+  window.setInterval(updatePresentationTimer, 1000);
 
   setTimeout(() => {
-    el('splash')?.classList.add('is-hidden');
+    const splash = el('splash');
+
+    if (splash) {
+      splash.classList.add('is-hidden');
+    }
+
+    const reduceMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)'
+    ).matches;
+
+    if (!reduceMotion) {
+      window.setTimeout(() => {
+        launchConfetti({
+          duration: 2200,
+          intensity: 1
+        });
+      }, 650);
+    }
+
+    const presentationButton = el('openPresentation');
+    if (presentationButton && !document.body.classList.contains('presentation-mode')) {
+      presentationButton.hidden = false;
+    }
   }, 900);
 }
 
@@ -1356,6 +1707,7 @@ function activatePresentationMode() {
 
   document.body.classList.add('presentation-mode');
   document.title = 'Indica+ ST1 | Apresentação';
+  navigate('presentation');
 
   const openPresentation = el('openPresentation');
   if (openPresentation) openPresentation.hidden = true;
