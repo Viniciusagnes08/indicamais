@@ -1236,7 +1236,7 @@ function initSelects() {
 }
 
 function bindEvents() {
-  document.querySelectorAll('.nav-item').forEach(button => {
+  document.querySelectorAll('.nav-item[data-view]').forEach(button => {
     button.addEventListener('click', () => navigate(button.dataset.view));
   });
 
