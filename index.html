@@ -38,6 +38,9 @@
         <button class="nav-item is-active" data-view="dashboard" aria-current="page">
           <span class="nav-icon" aria-hidden="true">⌂</span><span>Visão geral</span>
         </button>
+        <button class="nav-item" data-view="referrals">
+          <span class="nav-icon" aria-hidden="true">◉</span><span>Indicações</span>
+        </button>
         <button class="nav-item" data-view="ranking">
           <span class="nav-icon" aria-hidden="true">↗</span><span>Ranking</span>
         </button>
@@ -184,6 +187,17 @@
             <div id="salesFeed" class="sales-feed"></div>
           </article>
         </div>
+      </section>
+
+      <section class="view" id="view-referrals" data-title="Indicações">
+        <div class="section-intro">
+          <div><span class="eyebrow">Base ao vivo</span><h2>Indicações recebidas</h2><p>Todos os registros da INDICA+ CENTRAL dentro do período selecionado.</p></div>
+          <strong class="referrals-count" id="referralsCount">0 indicações</strong>
+        </div>
+        <article class="panel referrals-panel">
+          <div class="referrals-table-head"><span>Indicante</span><span>Equipe</span><span>Data</span><span>Status</span></div>
+          <div id="referralsList" class="referrals-list"></div>
+        </article>
       </section>
 
       <section class="view" id="view-ranking" data-title="Ranking de vendas">
