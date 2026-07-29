@@ -56,3 +56,70 @@ body.presentation-mode .hero-grid {
 body.presentation-mode .kpi-grid {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
+
+
+.referrals-count {
+  color: var(--text-primary, #f7f7ff);
+  font-size: 1rem;
+  padding: .7rem 1rem;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 999px;
+  background: rgba(255,255,255,.04);
+}
+
+.referrals-table-head,
+.referral-row {
+  display: grid;
+  grid-template-columns: minmax(210px, 2fr) minmax(120px, 1fr) minmax(100px, .7fr) minmax(150px, 1fr);
+  align-items: center;
+  gap: 1rem;
+}
+
+.referrals-table-head {
+  padding: .75rem 1rem;
+  color: var(--text-muted, #a5a5bc);
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.referral-row {
+  min-height: 72px;
+  padding: .7rem 1rem;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+
+.referral-row:last-child { border-bottom: 0; }
+
+.referral-status {
+  justify-self: start;
+  color: #9dc7ff;
+  background: rgba(37,99,235,.16);
+  border: 1px solid rgba(96,165,250,.24);
+  border-radius: 999px;
+  padding: .38rem .62rem;
+  font-size: .76rem;
+  font-weight: 800;
+}
+
+.referral-status.is-sale {
+  color: #86efac;
+  background: rgba(22,163,74,.16);
+  border-color: rgba(74,222,128,.25);
+}
+
+@media (max-width: 760px) {
+  .referrals-table-head { display: none; }
+  .referral-row {
+    grid-template-columns: 1fr auto;
+    gap: .55rem;
+    padding: .9rem;
+  }
+  .referral-row > span:nth-child(2),
+  .referral-row > span:nth-child(3) {
+    color: var(--text-muted, #a5a5bc);
+    font-size: .82rem;
+  }
+}
