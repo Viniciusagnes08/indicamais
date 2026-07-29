@@ -38,15 +38,20 @@
         <button class="nav-item is-active" data-view="dashboard" aria-current="page">
           <span class="nav-icon" aria-hidden="true">⌂</span><span>Visão geral</span>
         </button>
-        <button class="nav-item" data-view="referrals">
-          <span class="nav-icon" aria-hidden="true">◉</span><span>Indicações</span>
-        </button>
         <button class="nav-item" data-view="ranking">
           <span class="nav-icon" aria-hidden="true">↗</span><span>Ranking</span>
         </button>
         <button class="nav-item" data-view="territory">
           <span class="nav-icon" aria-hidden="true">◎</span><span>Mapa comercial</span>
         </button>
+        <button class="nav-item nav-live-control" data-view="referrals">
+          <span class="nav-icon nav-live-icon" aria-hidden="true">↻</span>
+          <span class="nav-live-copy"><strong>Indicações ao vivo</strong><small>Kommo + Sheets</small></span>
+        </button>
+        <a class="nav-item nav-live-control nav-presentation-control" id="openPresentation" href="?presentation=1" target="_blank" rel="noopener">
+          <span class="nav-icon nav-live-icon" aria-hidden="true">▶</span>
+          <span class="nav-live-copy"><strong>Apresentação</strong><small>Abrir painel do telão</small></span>
+        </a>
         <button class="nav-item" data-view="teams">
           <span class="nav-icon" aria-hidden="true">◫</span><span>Equipes</span>
         </button>
@@ -87,7 +92,6 @@
               <option value="quarter">Trimestre atual</option>
             </select>
           </label>
-          <a class="btn btn-ghost" id="openPresentation" href="?presentation=1" target="_blank" rel="noopener"><span>▶</span> Apresentação</a>
           <button class="btn btn-primary" id="openSaleModal"><span>＋</span> Registrar venda</button>
         </div>
       </header>
