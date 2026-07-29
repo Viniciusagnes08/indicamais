@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#24206f">
+  <meta name="description" content="Painel interno de gamificação de vendas do Indica+ ST1 Internet.">
+  <title>Indica+ ST1 | Liga de Vendas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,700&family=Bebas+Neue&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQ3ynhYV7Zsp4mM7QGL5mNwqZrSKjM=" crossorigin="">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <canvas id="confetti" aria-hidden="true"></canvas>
+  <div class="ambient ambient-a" aria-hidden="true"></div>
+  <div class="ambient ambient-b" aria-hidden="true"></div>
+  <div class="noise" aria-hidden="true"></div>
+
+  <div id="splash" class="splash" role="status" aria-live="polite">
+    <img src="assets/logo-st1-white.webp" alt="ST1 Internet" class="splash-logo">
+    <div class="splash-line"><span></span></div>
+    <p>Preparando a Liga de Vendas</p>
+  </div>
+
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand-lockup">
+        <img src="assets/logo-st1-white.webp" alt="ST1 Internet">
+        <div>
+          <strong>INDICA+</strong>
+          <span>Liga de Vendas</span>
+        </div>
+      </div>
+
+      <nav class="nav-list" aria-label="Navegação principal">
+        <button class="nav-item is-active" data-view="dashboard" aria-current="page">
+          <span class="nav-icon" aria-hidden="true">⌂</span><span>Visão geral</span>
+        </button>
+        <button class="nav-item" data-view="ranking">
+          <span class="nav-icon" aria-hidden="true">↗</span><span>Ranking</span>
+        </button>
+        <button class="nav-item" data-view="territory">
+          <span class="nav-icon" aria-hidden="true">◎</span><span>Mapa comercial</span>
+        </button>
+        <button class="nav-item" data-view="teams">
+          <span class="nav-icon" aria-hidden="true">◫</span><span>Equipes</span>
+        </button>
+        <button class="nav-item" data-view="rewards">
+          <span class="nav-icon" aria-hidden="true">◇</span><span>Premiações</span>
+        </button>
+        <button class="nav-item" data-view="admin">
+          <span class="nav-icon" aria-hidden="true">⚙</span><span>Administração</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-card">
+        <span class="eyebrow">Temporada interna</span>
+        <strong>Julho 2026</strong>
+        <div class="mini-progress"><span id="sideProgress"></span></div>
+        <small><b id="sideSales">0</b> de <b id="sideGoal">20</b> vendas</small>
+      </div>
+
+      <div class="sidebar-footer">
+        <span class="status-dot"></span>
+        <div><strong>Modo MVP</strong><small>Base demonstrativa calibrada</small></div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobileMenu" aria-label="Abrir menu" aria-expanded="false">☰</button>
+        <div class="topbar-title">
+          <span class="eyebrow">ST1 Internet · Programa interno</span>
+          <h1 id="pageTitle">Visão geral</h1>
+        </div>
+        <div class="topbar-actions">
+          <label class="period-control">
+            <span>Período</span>
+            <select id="periodSelect" aria-label="Selecionar período">
+              <option value="month">Mês atual</option>
+              <option value="week">Últimos 7 dias</option>
+              <option value="quarter">Trimestre atual</option>
+            </select>
+          </label>
+          <button class="btn btn-primary" id="openSaleModal"><span>＋</span> Registrar venda</button>
+        </div>
+      </header>
+
+      <div class="active-filter-bar" id="activeFilterBar" hidden>
+        <span>Seleção aplicada:</span>
+        <div id="activeFilterChips" class="filter-chips"></div>
+        <button id="clearFilters" class="text-button">Limpar tudo</button>
+      </div>
+
+      <section class="view is-active" id="view-dashboard" data-title="Visão geral">
+        <div class="hero-grid">
+          <article class="hero-card">
+            <div class="hero-copy">
+              <span class="live-pill"><i></i> Liga em andamento</span>
+              <p class="kicker">Resultado que sobe no placar</p>
+              <h2>VENDEU, <em>PONTUOU.</em></h2>
+              <p>O ranking considera apenas vendas confirmadas. Cada venda vale <strong>100 pontos</strong>; MRR, conversão e data da última venda definem os desempates.</p>
+              <div class="hero-actions">
+                <button class="btn btn-primary" data-go="ranking">Ver ranking completo</button>
+                <button class="btn btn-ghost" data-go="territory">Explorar territórios</button>
+              </div>
+            </div>
+            <div class="hero-visual" aria-hidden="true">
+              <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+              <img src="assets/mascote-apontando.webp" alt="" class="hero-mascot">
+              <div class="floating-score"><span>REGRA</span><strong>+100</strong><small>por venda</small></div>
+            </div>
+          </article>
+
+          <article class="goal-card">
+            <div class="goal-head">
+              <div><span class="eyebrow">Meta global do mês</span><h3>Desafio ST1</h3></div>
+              <span class="goal-status" id="goalStatus">Em ritmo</span>
+            </div>
+            <div class="goal-number"><strong id="goalSales">0</strong><span>/ <b id="goalTarget">20</b> vendas</span></div>
+            <div class="goal-progress"><span id="goalProgress"></span></div>
+            <div class="goal-details">
+              <div><span>Faltam</span><strong id="goalRemaining">0</strong></div>
+              <div><span>Progresso</span><strong id="goalPercent">0%</strong></div>
+              <div><span>Dias restantes</span><strong>2</strong></div>
+            </div>
+            <img src="assets/mascote-corrida.webp" alt="" class="goal-mascot" aria-hidden="true">
+          </article>
+        </div>
+
+        <div class="kpi-grid" id="kpiGrid">
+          <button class="kpi-card is-active" data-metric="sales">
+            <span class="kpi-label">Vendas confirmadas</span><strong id="kpiSales">0</strong><small id="kpiSalesDelta">-</small><i class="kpi-accent"></i>
+          </button>
+          <button class="kpi-card" data-metric="mrr">
+            <span class="kpi-label">MRR vendido</span><strong id="kpiMrr">R$ 0</strong><small id="kpiMrrDelta">-</small><i class="kpi-accent"></i>
+          </button>
+          <button class="kpi-card" data-metric="conversion">
+            <span class="kpi-label">Conversão das indicações</span><strong id="kpiConversion">0%</strong><small>vendas ÷ indicações válidas</small><i class="kpi-accent"></i>
+          </button>
+          <button class="kpi-card" data-metric="ticket">
+            <span class="kpi-label">Ticket médio mensal</span><strong id="kpiTicket">R$ 0</strong><small>MRR ÷ vendas</small><i class="kpi-accent"></i>
+          </button>
+          <button class="kpi-card" data-metric="participants">
+            <span class="kpi-label">Participantes com venda</span><strong id="kpiParticipants">0</strong><small id="kpiParticipantsText">de 0 elegíveis</small><i class="kpi-accent"></i>
+          </button>
+        </div>
+
+        <div class="dashboard-grid">
+          <article class="panel ranking-preview-panel">
+            <div class="panel-head">
+              <div><span class="eyebrow">Classificação atual</span><h3>Pódio da temporada</h3></div>
+              <button class="text-button" data-go="ranking">Ver todos</button>
+            </div>
+            <div id="podium" class="podium"></div>
+            <div id="compactRanking" class="compact-ranking"></div>
+          </article>
+
+          <article class="panel chart-panel">
+            <div class="panel-head">
+              <div><span class="eyebrow">Ritmo comercial</span><h3>Vendas nos últimos 7 dias</h3></div>
+              <span class="legend-dot">Vendas</span>
+            </div>
+            <div class="bar-chart" id="weeklyChart" role="img" aria-label="Gráfico de vendas nos últimos 7 dias"></div>
+            <div class="chart-summary" id="chartSummary"></div>
+          </article>
+
+          <article class="panel territory-preview-panel">
+            <div class="panel-head">
+              <div><span class="eyebrow">São Luís e região</span><h3>Distribuição territorial</h3></div>
+              <button class="text-button" data-go="territory">Abrir mapa</button>
+            </div>
+            <div id="territoryPreview" class="territory-preview"></div>
+          </article>
+
+          <article class="panel feed-panel">
+            <div class="panel-head">
+              <div><span class="eyebrow">Atualizações</span><h3>Últimas vendas</h3></div>
+              <span class="pulse-label"><i></i> Atualizando</span>
+            </div>
+            <div id="salesFeed" class="sales-feed"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" id="view-ranking" data-title="Ranking de vendas">
+        <div class="section-intro">
+          <div><span class="eyebrow">Competição interna</span><h2>Ranking de vendas</h2><p>Todos os indicadores abaixo seguem exatamente os filtros selecionados.</p></div>
+          <div class="ranking-controls">
+            <label class="search-box"><span>⌕</span><input id="rankingSearch" type="search" placeholder="Buscar participante"></label>
+            <select id="departmentSelect" aria-label="Filtrar por equipe"><option value="all">Todas as equipes</option></select>
+          </div>
+        </div>
+        <article class="panel ranking-table-panel">
+          <div class="table-meta"><span id="rankingCount">0 participantes</span><span id="rankingSortLabel">Ordenado por vendas</span></div>
+          <div class="ranking-table-head"><span>#</span><span>Participante</span><span>Equipe</span><span>Indicações</span><span>Vendas</span><span>MRR</span><span>Conversão</span><span>Pontos</span></div>
+          <div id="fullRanking" class="full-ranking"></div>
+        </article>
+      </section>
+
+      <section class="view" id="view-territory" data-title="Mapa comercial">
+        <div class="section-intro">
+          <div><span class="eyebrow">Inteligência territorial</span><h2>São Luís e região</h2><p>Clique no mapa ou nos territórios para recalcular ranking, KPIs e equipes na mesma seleção.</p></div>
+          <button class="btn btn-ghost" id="resetMap">Mostrar todos os territórios</button>
+        </div>
+        <div class="map-layout">
+          <article class="panel map-panel">
+            <div class="map-toolbar">
+              <div><strong id="mapSelectionTitle">Grande São Luís</strong><span id="mapSelectionSubtitle">Visão consolidada</span></div>
+              <div class="map-legend"><span><i class="map-dot"></i>Tamanho = vendas</span><span><i class="map-ring"></i>Seleção ativa</span></div>
+            </div>
+            <div id="commercialMap" class="commercial-map" aria-label="Mapa comercial de São Luís e região"></div>
+            <div id="mapFallback" class="map-fallback" hidden>O mapa não pôde carregar. Os filtros territoriais continuam disponíveis ao lado.</div>
+          </article>
+          <aside class="territory-sidebar">
+            <article class="panel selected-territory-card">
+              <span class="eyebrow">Território selecionado</span>
+              <h3 id="selectedTerritoryName">Todos</h3>
+              <div class="territory-kpis">
+                <div><span>Vendas</span><strong id="territorySales">0</strong></div>
+                <div><span>MRR</span><strong id="territoryMrr">R$ 0</strong></div>
+                <div><span>Conversão</span><strong id="territoryConversion">0%</strong></div>
+                <div><span>Ticket</span><strong id="territoryTicket">R$ 0</strong></div>
+              </div>
+            </article>
+            <article class="panel territory-list-panel">
+              <div class="panel-head compact"><div><span class="eyebrow">Navegação</span><h3>Territórios</h3></div></div>
+              <div id="territoryList" class="territory-list"></div>
+            </article>
+          </aside>
+        </div>
+        <div class="map-insights-grid">
+          <article class="panel"><span class="eyebrow">Participação</span><h3>Share de vendas</h3><div id="territoryShare" class="metric-bars"></div></article>
+          <article class="panel"><span class="eyebrow">Oportunidade</span><h3>Conversão por território</h3><div id="territoryConversionBars" class="metric-bars"></div></article>
+          <article class="panel"><span class="eyebrow">Valor</span><h3>MRR por território</h3><div id="territoryMrrBars" class="metric-bars"></div></article>
+        </div>
+      </section>
+
+      <section class="view" id="view-teams" data-title="Equipes">
+        <div class="section-intro"><div><span class="eyebrow">Disputa coletiva</span><h2>Desempenho por equipe</h2><p>O ranking coletivo considera vendas totais e usa MRR como desempate.</p></div></div>
+        <div id="teamCards" class="team-cards"></div>
+      </section>
+
+      <section class="view" id="view-rewards" data-title="Premiações">
+        <div class="section-intro"><div><span class="eyebrow">Reconhecimento</span><h2>Premiações da temporada</h2><p>Prêmios liberados somente para vendas confirmadas dentro da campanha.</p></div></div>
+        <div class="rewards-grid">
+          <article class="reward-card reward-first"><span class="place">1º</span><div><span class="eyebrow">Campeão do mês</span><h3>Experiência premium</h3><p>Prêmio principal + troféu interno</p></div><strong>R$ 1.000</strong></article>
+          <article class="reward-card"><span class="place">2º</span><div><span class="eyebrow">Vice-campeão</span><h3>Vale experiência</h3><p>Reconhecimento no encontro mensal</p></div><strong>R$ 600</strong></article>
+          <article class="reward-card"><span class="place">3º</span><div><span class="eyebrow">Terceiro lugar</span><h3>Vale presente</h3><p>Reconhecimento no encontro mensal</p></div><strong>R$ 400</strong></article>
+        </div>
+        <article class="panel reward-rules"><img src="assets/mascote-apresentando.webp" alt="Mascote ST1 apresentando as regras"><div><span class="eyebrow">Critério oficial</span><h3>Venda confirmada vale 100 pontos</h3><p>Indicação, negociação e proposta não geram pontos. Em caso de empate, vence quem tiver maior MRR; depois, maior conversão; por fim, a venda confirmada mais recente.</p></div></article>
+      </section>
+
+      <section class="view" id="view-admin" data-title="Administração">
+        <div class="section-intro"><div><span class="eyebrow">Governança do MVP</span><h2>Administração</h2><p>Controles operacionais da versão demonstrativa e preparação para integração com o Kommo.</p></div></div>
+        <div class="admin-grid">
+          <article class="panel admin-card"><span class="admin-icon">✓</span><div><h3>Regra de cálculo</h3><p>Uma linha por venda; apenas status “confirmada” entra no ranking.</p></div><strong class="status-badge success">Ativo</strong></article>
+          <article class="panel admin-card"><span class="admin-icon">↻</span><div><h3>Fonte de dados</h3><p>Base demonstrativa calibrada. Endpoint real do Kommo ainda será conectado.</p></div><strong class="status-badge warning">MVP</strong></article>
+          <article class="panel admin-card"><span class="admin-icon">◎</span><div><h3>Mapa territorial</h3><p>Leaflet + OpenStreetMap com agregação por município, sem endereços pessoais.</p></div><strong class="status-badge success">Ativo</strong></article>
+          <article class="panel admin-card"><span class="admin-icon">⇩</span><div><h3>Exportação</h3><p>Baixe o ranking da seleção atual em CSV para conferência.</p></div><button class="btn btn-ghost" id="exportCsv">Exportar CSV</button></article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="saleModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="saleModalTitle">
+      <button class="modal-close" data-close="saleModal" aria-label="Fechar">×</button>
+      <div class="modal-hero"><img src="assets/mascote-aberto.webp" alt="Mascote ST1 comemorando"><div><span class="eyebrow">Nova venda</span><h2 id="saleModalTitle">Subir no ranking</h2><p>A venda será confirmada e adicionada ao placar atual.</p></div></div>
+      <form id="saleForm" class="sale-form">
+        <label>Participante<select id="saleEmployee" required></select></label>
+        <label>Plano<select id="salePlan" required><option value="89">Plano 89 · R$ 89/mês</option><option value="109">Plano 109 · R$ 109/mês</option><option value="129">Plano 129 · R$ 129/mês</option><option value="149">Plano 149 · R$ 149/mês</option></select></label>
+        <label>Município<select id="saleMunicipality" required></select></label>
+        <label>Bairro / localidade<input id="saleNeighborhood" type="text" placeholder="Ex.: Turu" required></label>
+        <label class="full">Identificador interno da venda<input id="saleReference" type="text" placeholder="Ex.: KMO-663122" required></label>
+        <p class="form-note full">Não insira nome, telefone ou endereço completo do cliente neste MVP.</p>
+        <button type="submit" class="btn btn-primary full">Confirmar venda · +100 pontos</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="profileModal" hidden>
+    <div class="modal profile-modal" role="dialog" aria-modal="true" aria-labelledby="profileName">
+      <button class="modal-close" data-close="profileModal" aria-label="Fechar">×</button>
+      <div id="profileContent"></div>
+    </div>
+  </div>
+
+  <div class="sale-celebration" id="saleCelebration" aria-hidden="true">
+    <div class="celebration-rays"></div>
+    <img src="assets/mascote-aberto.webp" alt="" class="celebration-mascot">
+    <span>NOVA VENDA</span><strong>+100 PONTOS</strong><small id="celebrationText">O placar foi atualizado</small>
+  </div>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="app.js"></script>
+</body>
+</html>
