@@ -28,6 +28,10 @@ let sales = [];
 let mapPoints = [];
 let lastSnapshot = '';
 let lastSyncAt = null;
+let lastKnownSaleCount = null;
+let confettiAnimationFrame = null;
+let confettiRunId = 0;
+let startupCelebrationPlayed = false;
 
 const territories = [
   { id: 'sao-luis', name: 'São Luís', short: 'SLZ', lat: -2.5307, lng: -44.3068 },
@@ -513,9 +517,15 @@ async function loadLiveData({ silent = false } = {}) {
     const rows = normalizePayloadRows(payload);
     const snapshot = JSON.stringify(rows);
     const changed = snapshot !== lastSnapshot;
+    const previousKnownSales = lastKnownSaleCount;
     lastSnapshot = snapshot;
 
     const metrics = applyLiveRows(rows);
+    const newSales = previousKnownSales === null
+      ? 0
+      : Math.max(0, metrics.sales - previousKnownSales);
+
+    lastKnownSaleCount = metrics.sales;
     lastSyncAt = new Date();
 
     updateSourceStatus(
@@ -530,20 +540,34 @@ async function loadLiveData({ silent = false } = {}) {
       saleButton.title = 'As vendas são registradas no Kommo e sincronizadas automaticamente.';
     }
 
-    if (changed && !silent) {
+    if (newSales > 0) {
+      window.setTimeout(() => {
+        showLiveSaleCelebration(newSales);
+        launchConfetti({
+          duration: 4600,
+          intensity: Math.min(2.35, 1.55 + (newSales * 0.18)),
+          sideBursts: true
+        });
+        animateSaleHighlights();
+      }, 250);
+    } else if (changed && !silent) {
       showToast(`Dados atualizados: ${metrics.referrals} indicações e ${metrics.sales} vendas.`);
     }
+
+    repairMapLayout();
 
     console.info('[INDICA+ CENTRAL]', {
       generatedAt: payload.generatedAt,
       source: payload.source,
       metrics,
+      newSales,
       lastSyncAt
     });
   } catch (error) {
     employees = [];
     referrals = [];
     sales = [];
+    mapPoints = [];
     initSelects();
     renderAll();
 
@@ -1273,7 +1297,8 @@ function initMap() {
     fallback.style.display = 'none';
   }
   updateMapMarkers();
-  setTimeout(() => map.invalidateSize(), 100);
+  setTimeout(repairMapLayout, 100);
+  setTimeout(repairMapLayout, 500);
 
   console.info('[INDICA+ MAP] Mapa inicializado.', {
     leaflet: L.version,
@@ -1394,7 +1419,14 @@ function navigate(view) {
   el('sidebar')?.classList.remove('is-open');
   el('mobileMenu')?.setAttribute('aria-expanded', 'false');
 
-  if (view === 'territory' && map) setTimeout(() => map.invalidateSize(), 180);
+  if (view === 'territory' && map) {
+    window.setTimeout(() => {
+      repairMapLayout();
+      animateMapScan();
+    }, 180);
+  }
+
+  window.setTimeout(playEntranceAnimations, 30);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -1476,61 +1508,428 @@ function showToast(message, error = false) {
   setTimeout(() => toast.remove(), 3500);
 }
 
-function launchConfetti({ duration = 1800, intensity = 1 } = {}) {
-  const canvas = el('confetti');
-  if (!canvas) return;
+function ensureConfettiCanvas() {
+  let canvas = el('confetti');
 
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'confetti';
+    canvas.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(canvas);
+  }
+
+  canvas.hidden = false;
+  canvas.style.display = 'block';
+  canvas.style.visibility = 'visible';
+  canvas.style.opacity = '1';
+  return canvas;
+}
+
+function launchConfetti({ duration = 4200, intensity = 1.65, sideBursts = true } = {}) {
+  const canvas = ensureConfettiCanvas();
   const context = canvas.getContext('2d');
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const width = window.innerWidth;
-  const height = window.innerHeight;
+  if (!context) return;
 
-  canvas.width = width * dpr;
-  canvas.height = height * dpr;
+  const runId = ++confettiRunId;
+  if (confettiAnimationFrame) cancelAnimationFrame(confettiAnimationFrame);
+
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.max(320, window.innerWidth);
+  const height = Math.max(480, window.innerHeight);
+
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
   context.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  const colors = ['#ff7600', '#333399', '#7776e9', '#ffffff', '#ffca55'];
-  const count = Math.round(Math.min(240, 110 * intensity));
-  const pieces = Array.from({ length: count }, () => ({
-    x: Math.random() * width,
-    y: -20 - Math.random() * height * 0.45,
-    w: 5 + Math.random() * 8,
-    h: 3 + Math.random() * 5,
-    color: colors[Math.floor(Math.random() * colors.length)],
-    speed: 2.5 + Math.random() * 5,
-    drift: -1.5 + Math.random() * 3,
-    rotation: Math.random() * Math.PI,
-    rotationSpeed: -0.12 + Math.random() * 0.24
-  }));
+  const colors = ['#ff7600', '#ff9b45', '#333399', '#7776e9', '#ffffff', '#ffca55', '#50db9c'];
+  const topCount = Math.round(Math.min(320, 150 * intensity));
+  const sideCount = sideBursts ? Math.round(Math.min(210, 82 * intensity)) : 0;
+  const pieces = [];
 
-  const started = performance.now();
+  function createPiece(origin) {
+    const fromLeft = origin === 'left';
+    const fromRight = origin === 'right';
+    const isSide = fromLeft || fromRight;
+    const size = 4 + Math.random() * 8;
+
+    return {
+      x: fromLeft ? -20 : fromRight ? width + 20 : Math.random() * width,
+      y: isSide ? height * (0.28 + Math.random() * 0.5) : -30 - Math.random() * height * 0.55,
+      vx: fromLeft
+        ? 5 + Math.random() * 8
+        : fromRight
+          ? -(5 + Math.random() * 8)
+          : -1.8 + Math.random() * 3.6,
+      vy: isSide ? -(4 + Math.random() * 8) : 1.8 + Math.random() * 4.7,
+      gravity: 0.075 + Math.random() * 0.085,
+      drag: 0.991 + Math.random() * 0.006,
+      w: size,
+      h: 2.5 + Math.random() * 5.5,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      rotation: Math.random() * Math.PI * 2,
+      rotationSpeed: -0.22 + Math.random() * 0.44,
+      flutter: Math.random() * Math.PI * 2,
+      opacity: 0.86 + Math.random() * 0.14,
+      shape: Math.random() > 0.82 ? 'circle' : 'rect'
+    };
+  }
+
+  for (let index = 0; index < topCount; index += 1) {
+    pieces.push(createPiece('top'));
+  }
+
+  for (let index = 0; index < sideCount; index += 1) {
+    pieces.push(createPiece(index % 2 === 0 ? 'left' : 'right'));
+  }
+
+  const startedAt = performance.now();
 
   function frame(now) {
+    if (runId !== confettiRunId) return;
+
+    const elapsed = now - startedAt;
     context.clearRect(0, 0, width, height);
 
     pieces.forEach(piece => {
-      piece.y += piece.speed;
-      piece.x += piece.drift + Math.sin(piece.y * 0.02) * 0.45;
+      piece.vy += piece.gravity;
+      piece.vx *= piece.drag;
+      piece.x += piece.vx + Math.sin(piece.flutter + piece.y * 0.018) * 0.55;
+      piece.y += piece.vy;
       piece.rotation += piece.rotationSpeed;
+      piece.flutter += 0.035;
+
+      if (elapsed > duration * 0.72) {
+        piece.opacity = Math.max(0, piece.opacity - 0.012);
+      }
 
       context.save();
+      context.globalAlpha = piece.opacity;
       context.translate(piece.x, piece.y);
       context.rotate(piece.rotation);
       context.fillStyle = piece.color;
-      context.fillRect(-piece.w / 2, -piece.h / 2, piece.w, piece.h);
+
+      if (piece.shape === 'circle') {
+        context.beginPath();
+        context.arc(0, 0, piece.w * 0.45, 0, Math.PI * 2);
+        context.fill();
+      } else {
+        context.fillRect(-piece.w / 2, -piece.h / 2, piece.w, piece.h);
+      }
+
       context.restore();
     });
 
-    if (now - started < duration && pieces.some(piece => piece.y < height + 30)) {
-      requestAnimationFrame(frame);
+    const activePieces = pieces.some(piece => (
+      piece.opacity > 0
+      && piece.y < height + 80
+      && piece.x > -100
+      && piece.x < width + 100
+    ));
+
+    if (elapsed < duration && activePieces) {
+      confettiAnimationFrame = requestAnimationFrame(frame);
     } else {
       context.clearRect(0, 0, width, height);
+      confettiAnimationFrame = null;
     }
   }
 
-  requestAnimationFrame(frame);
+  confettiAnimationFrame = requestAnimationFrame(frame);
+}
+
+function injectMotionStyles() {
+  if (el('indicamaisMotionStyles')) return;
+
+  const style = document.createElement('style');
+  style.id = 'indicamaisMotionStyles';
+  style.textContent = `
+    #confetti {
+      position: fixed !important;
+      inset: 0 !important;
+      z-index: 2147483000 !important;
+      display: block;
+      visibility: visible;
+      opacity: 1;
+      pointer-events: none !important;
+    }
+
+    .map-panel,
+    .map-canvas-wrap {
+      overflow: hidden !important;
+    }
+
+    .map-canvas-wrap,
+    .map-layout-live .commercial-map,
+    #commercialMap {
+      height: 650px !important;
+      min-height: 650px !important;
+      max-height: 650px !important;
+      margin: 0 !important;
+    }
+
+    #commercialMap[hidden],
+    .map-fallback[hidden] {
+      display: none !important;
+    }
+
+    .leaflet-container {
+      margin: 0 !important;
+      border: 0 !important;
+    }
+
+    .indica-reveal {
+      animation: indicaReveal .72s cubic-bezier(.2,.8,.2,1) both;
+      animation-delay: var(--indica-delay, 0ms);
+    }
+
+    .indica-map-scan::after {
+      content: '';
+      position: absolute;
+      z-index: 640;
+      top: 0;
+      bottom: 0;
+      width: 22%;
+      left: -28%;
+      pointer-events: none;
+      background: linear-gradient(90deg, transparent, rgba(68,216,255,.24), transparent);
+      transform: skewX(-12deg);
+      animation: indicaMapScan 1.35s cubic-bezier(.2,.8,.2,1) both;
+    }
+
+    .indica-sale-pulse {
+      animation: indicaSalePulse 1.1s cubic-bezier(.2,.8,.2,1) both !important;
+    }
+
+    .live-sale-celebration {
+      position: fixed;
+      inset: 0;
+      z-index: 2147482000;
+      display: grid;
+      place-items: center;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      background: radial-gradient(circle at center, rgba(75,73,198,.68), rgba(8,9,21,.25) 48%, transparent 74%);
+    }
+
+    .live-sale-celebration.is-active {
+      visibility: visible;
+      animation: indicaCelebrationOverlay 2.9s cubic-bezier(.2,.8,.2,1) both;
+    }
+
+    .live-sale-celebration__rays {
+      position: absolute;
+      width: min(920px, 115vw);
+      aspect-ratio: 1;
+      border-radius: 50%;
+      background: repeating-conic-gradient(from 0deg, rgba(255,255,255,.12) 0 5deg, transparent 5deg 16deg);
+      animation: indicaRaysSpin 8s linear infinite;
+      mask-image: radial-gradient(circle, #000 0 48%, transparent 72%);
+    }
+
+    .live-sale-celebration__card {
+      position: relative;
+      display: grid;
+      justify-items: center;
+      gap: 7px;
+      min-width: min(470px, calc(100vw - 36px));
+      padding: 28px 34px;
+      border: 1px solid rgba(255,255,255,.22);
+      border-radius: 24px;
+      background: linear-gradient(145deg, rgba(28,29,73,.96), rgba(14,15,39,.96));
+      box-shadow: 0 35px 100px rgba(0,0,0,.55), 0 0 80px rgba(255,118,0,.2);
+      transform: translateY(20px) scale(.88);
+      animation: indicaCelebrationCard 2.9s cubic-bezier(.2,.8,.2,1) both;
+    }
+
+    .live-sale-celebration__card small {
+      color: #c7c8df;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .live-sale-celebration__card strong {
+      color: #fff;
+      font-family: var(--display, sans-serif);
+      font-size: clamp(48px, 8vw, 92px);
+      line-height: .9;
+      letter-spacing: .035em;
+      text-align: center;
+    }
+
+    .live-sale-celebration__card b {
+      color: #ff9b45;
+      font-family: var(--display, sans-serif);
+      font-size: clamp(26px, 5vw, 54px);
+      line-height: 1;
+    }
+
+    @keyframes indicaReveal {
+      from { opacity: 0; transform: translateY(20px) scale(.985); filter: blur(5px); }
+      to { opacity: 1; transform: none; filter: none; }
+    }
+
+    @keyframes indicaMapScan {
+      from { left: -28%; opacity: 0; }
+      20% { opacity: 1; }
+      to { left: 112%; opacity: 0; }
+    }
+
+    @keyframes indicaSalePulse {
+      0% { transform: scale(1); box-shadow: inherit; }
+      35% { transform: scale(1.035); box-shadow: 0 0 0 3px rgba(255,118,0,.3), 0 22px 70px rgba(255,118,0,.28); }
+      100% { transform: scale(1); box-shadow: inherit; }
+    }
+
+    @keyframes indicaCelebrationOverlay {
+      0% { opacity: 0; }
+      12%, 76% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    @keyframes indicaCelebrationCard {
+      0% { opacity: 0; transform: translateY(28px) scale(.78) rotate(-2deg); }
+      18% { opacity: 1; transform: translateY(0) scale(1.04) rotate(1deg); }
+      32%, 76% { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+      100% { opacity: 0; transform: translateY(-16px) scale(.94); }
+    }
+
+    @keyframes indicaRaysSpin {
+      to { transform: rotate(360deg); }
+    }
+
+    @media (max-width: 920px) {
+      .map-canvas-wrap,
+      .map-layout-live .commercial-map,
+      #commercialMap {
+        height: 540px !important;
+        min-height: 540px !important;
+        max-height: 540px !important;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .map-canvas-wrap,
+      .map-layout-live .commercial-map,
+      #commercialMap {
+        height: 480px !important;
+        min-height: 480px !important;
+        max-height: 480px !important;
+      }
+
+      .live-sale-celebration__card {
+        padding: 24px 18px;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function repairMapLayout() {
+  const mapElement = el('commercialMap');
+  const wrapper = mapElement?.closest('.map-canvas-wrap');
+  const fallback = el('mapFallback');
+
+  if (mapElement && !mapElement.hidden) {
+    mapElement.style.display = 'block';
+    mapElement.style.margin = '0';
+  }
+
+  if (wrapper) {
+    wrapper.style.paddingBottom = '0';
+    wrapper.style.marginBottom = '0';
+    wrapper.style.overflow = 'hidden';
+  }
+
+  if (fallback?.hidden) {
+    fallback.style.display = 'none';
+  }
+
+  if (map) {
+    window.requestAnimationFrame(() => map.invalidateSize({ animate: false }));
+  }
+}
+
+function playEntranceAnimations() {
+  const targets = [
+    document.querySelector('.sidebar'),
+    document.querySelector('.topbar'),
+    ...document.querySelectorAll('.view.is-active .hero-card, .view.is-active .goal-card, .view.is-active .kpi-card, .view.is-active .panel')
+  ].filter(Boolean);
+
+  targets.forEach((target, index) => {
+    target.classList.remove('indica-reveal');
+    target.style.setProperty('--indica-delay', `${Math.min(index * 55, 520)}ms`);
+    void target.offsetWidth;
+    target.classList.add('indica-reveal');
+  });
+}
+
+function animateMapScan() {
+  const wrapper = el('commercialMap')?.closest('.map-canvas-wrap');
+  if (!wrapper) return;
+  wrapper.classList.remove('indica-map-scan');
+  void wrapper.offsetWidth;
+  wrapper.classList.add('indica-map-scan');
+  window.setTimeout(() => wrapper.classList.remove('indica-map-scan'), 1500);
+}
+
+function animateSaleHighlights() {
+  const targets = [
+    document.querySelector('[data-metric="sales"]'),
+    document.querySelector('.goal-card'),
+    document.querySelector('.sidebar-card'),
+    document.querySelector('.presentation-metrics article:nth-child(2)')
+  ].filter(Boolean);
+
+  targets.forEach(target => {
+    target.classList.remove('indica-sale-pulse');
+    void target.offsetWidth;
+    target.classList.add('indica-sale-pulse');
+    window.setTimeout(() => target.classList.remove('indica-sale-pulse'), 1250);
+  });
+}
+
+function showLiveSaleCelebration(count = 1) {
+  let overlay = el('liveSaleCelebration');
+
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'liveSaleCelebration';
+    overlay.className = 'live-sale-celebration';
+    overlay.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(overlay);
+  }
+
+  overlay.innerHTML = `
+    <span class="live-sale-celebration__rays"></span>
+    <div class="live-sale-celebration__card">
+      <small>INDICA+ ST1 · ATUALIZAÇÃO AO VIVO</small>
+      <strong>VENDA CONFIRMADA</strong>
+      <b>+${number.format(count)} ${count === 1 ? 'VENDA' : 'VENDAS'}</b>
+    </div>`;
+
+  overlay.classList.remove('is-active');
+  void overlay.offsetWidth;
+  overlay.classList.add('is-active');
+  window.setTimeout(() => overlay.classList.remove('is-active'), 3100);
+}
+
+function playStartupCelebration() {
+  if (startupCelebrationPlayed) return;
+  startupCelebrationPlayed = true;
+
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  launchConfetti({
+    duration: reduceMotion ? 2600 : 4600,
+    intensity: reduceMotion ? 1.05 : 1.85,
+    sideBursts: true
+  });
 }
 
 function initSelects() {
@@ -1650,6 +2049,7 @@ function bindEvents() {
 }
 
 function boot() {
+  injectMotionStyles();
   initSelects();
   bindEvents();
   renderAll();
@@ -1672,31 +2072,45 @@ function boot() {
   updatePresentationTimer();
   window.setInterval(updatePresentationTimer, 1000);
 
-  setTimeout(() => {
+  [120, 520, 1200].forEach(delay => {
+    window.setTimeout(repairMapLayout, delay);
+  });
+
+  window.setTimeout(() => {
     const splash = el('splash');
 
     if (splash) {
       splash.classList.add('is-hidden');
     }
 
-    const reduceMotion = window.matchMedia(
-      '(prefers-reduced-motion: reduce)'
-    ).matches;
-
-    if (!reduceMotion) {
-      window.setTimeout(() => {
-        launchConfetti({
-          duration: 2200,
-          intensity: 1
-        });
-      }, 650);
-    }
+    window.setTimeout(() => {
+      playEntranceAnimations();
+      playStartupCelebration();
+      if (state.view === 'territory') animateMapScan();
+    }, 720);
 
     const presentationButton = el('openPresentation');
     if (presentationButton && !document.body.classList.contains('presentation-mode')) {
       presentationButton.hidden = false;
     }
   }, 900);
+
+  window.INDICAMAIS_MOTION = Object.freeze({
+    replay() {
+      startupCelebrationPlayed = false;
+      playStartupCelebration();
+      playEntranceAnimations();
+    },
+    celebrateSale(count = 1) {
+      showLiveSaleCelebration(Math.max(1, Number(count) || 1));
+      launchConfetti({ duration: 4600, intensity: 1.9, sideBursts: true });
+      animateSaleHighlights();
+    },
+    repairMap() {
+      repairMapLayout();
+      animateMapScan();
+    }
+  });
 }
 
 document.addEventListener('DOMContentLoaded', boot);
